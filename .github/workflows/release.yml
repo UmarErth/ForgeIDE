@@ -50,13 +50,13 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
       - name: Install Tauri CLI
-        run: cargo install tauri-cli --version '^2' --locked
+        run: npm install --no-save --package-lock=false @tauri-apps/cli@^2
       - name: Generate cross-platform icons
         if: runner.os == 'macOS' || runner.os == 'Linux'
         run: python3 scripts/create-platform-icons.py
       - name: Build app bundles
         shell: bash
-        run: cargo tauri build --bundles "${{ matrix.bundles }}"
+        run: npx tauri build --bundles "${{ matrix.bundles }}"
       - name: Stage macOS downloads
         if: runner.os == 'macOS'
         shell: bash
