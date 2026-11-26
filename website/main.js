@@ -10,8 +10,8 @@ const platforms = {
   },
   macos: {
     label: 'macOS',
-    button: 'download-macos',
-    patterns: ['forgeide-macos.dmg', 'forgeide-macos.app.zip']
+    button: 'download-macos-arm64',
+    patterns: ['forgeide-macos-arm64.dmg', 'forgeide-macos-arm64.app.zip']
   },
   linux: {
     label: 'Linux',
@@ -36,9 +36,30 @@ function findAsset(release, patterns) {
   return null;
 }
 
+async function detectMacArchitecture() {
+  const hints = navigator.userAgentData;
+  if (hints?.getHighEntropyValues) {
+    try {
+      const info = await hints.getHighEntropyValues(['architecture']);
+      const architecture = (info.architecture || '').toLowerCase();
+      if (architecture.includes('arm')) return 'arm64';
+      if (architecture === 'x86' || architecture.includes('x86_64')) return 'x86_64';
+    } catch {}
+  }
+  const agent = (navigator.userAgent || '').toLowerCase();
+  if (agent.includes('arm64') || agent.includes('aarch64')) return 'arm64';
+  if (agent.includes('x86_64') || agent.includes('intel')) return 'x86_64';
+  return null;
+}
+
+const macAssets = {
+  arm64: ['forgeide-macos-arm64.dmg', 'forgeide-macos-arm64.app.zip'],
+  x86_64: ['forgeide-macos-x86_64.dmg', 'forgeide-macos-x86_64.app.zip']
+};
+
 async function connectDownloads() {
   const primary = document.getElementById('download-primary');
-  const detected = detectPlatform();
+  const detected = detectPlatform();\n  const macArchitecture = detected === 'macos' ? await detectMacArchitecture() : null;
   if (primary && detected) {
     primary.href = latestUrl;
     primary.setAttribute('aria-label', `Download Forge IDE for ${platforms[detected].label}`);
@@ -57,8 +78,13 @@ async function connectDownloads() {
       const button = document.getElementById(platform.button);
       if (button && asset) button.href = asset.browser_download_url;
     }
+    for (const [arch, patterns] of Object.entries(macAssets)) {
+      const asset = findAsset(release, patterns);
+      const button = document.getElementById(arch === 'arm64' ? 'download-macos-arm64' : 'download-macos-x86_64');
+      if (button && asset) button.href = asset.browser_download_url;
+    }
 
-    const recommendedAsset = detected ? findAsset(release, platforms[detected].patterns) : null;
+    const recommendedPatterns = detected === 'macos' ? (macArchitecture ? macAssets[macArchitecture] : []) : detected ? platforms[detected].patterns : [];\n    const recommendedAsset = recommendedPatterns.length ? findAsset(release, recommendedPatterns) : null;
     if (primary) {
       if (recommendedAsset) {
         primary.href = recommendedAsset.browser_download_url;
@@ -85,6 +111,8 @@ async function connectDownloads() {
       const button = document.getElementById(platform.button);
       if (button) button.href = releasesUrl;
     }
+    document.getElementById('download-macos-arm64')?.setAttribute('href', releasesUrl);
+    document.getElementById('download-macos-x86_64')?.setAttribute('href', releasesUrl);
   }
 }
 
