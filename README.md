@@ -25,7 +25,8 @@ Get current installers and portable builds from [GitHub Releases](https://github
 | Platform | Release files |
 | --- | --- |
 | Windows x64 | Setup `.exe`, `.msi`, and portable `.exe` |
-| macOS | `.dmg` installer and zipped `.app` |
+| macOS Apple Silicon (arm64) | `.dmg` installer and zipped `.app` |
+| macOS Intel (x86_64) | `.dmg` installer and zipped `.app` |
 | Linux x86_64 | `.AppImage` |
 
 Release builds run on native Windows, macOS, and Ubuntu runners. Push a version tag such as `v0.2.0`, or run **Build and publish releases** from GitHub Actions with a release tag, to build all platforms and attach their downloads to a GitHub Release.
@@ -36,13 +37,14 @@ Release builds run on native Windows, macOS, and Ubuntu runners. Push a version 
 - Search text across a project and view its Git status.
 - Ask Gemini to explain or review the current file, or help plan a feature.
 - Store the Gemini key using the operating system credential store.
+- Choose a default project folder and a separate folder for saved Gemini chats in Settings.
 - Use the same Rust desktop core on Windows, macOS, and Linux.
 
 ## Quick start
 
 1. Download and launch the build for your operating system.
 2. On first launch, enter a display name and your Gemini API key. Create a key at [Google AI Studio](https://aistudio.google.com/apikey).
-3. Open a project folder and start working. Forge stores your key in Windows Credential Manager, macOS Keychain, or Linux Secret Service.
+3. Open a project folder and start working. Forge defaults to `Documents/Forge IDE Projects`; change the default in Settings. Saved Gemini chats default to the Forge application-data folder, and can also be moved to a folder you choose in Settings. Forge stores your key in Windows Credential Manager, macOS Keychain, or Linux Secret Service.
 
 The Gemini key is sent to Google's Gemini API when you send a prompt. Forge does not include a shared API key.
 
