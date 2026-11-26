@@ -105,19 +105,41 @@ async fn ask_gemini(prompt: String, context: String, model: String) -> Result<St
     if let Some(text) = data.get("output_text").and_then(|v| v.as_str()).filter(|s| !s.trim().is_empty()) {
         return Ok(text.to_string());
     }
-    let text = data.pointer("/output").and_then(|v| v.as_array())
-        .map(|items| items.iter().filter_map(|item| {
-            if item.get("type").and_then(|v| v.as_str()) == Some("text") {
-                item.get("text").and_then(|v| v.as_str())
-            } else {
-                None
+    let mut text_parts = Vec::new();
+    if let Some(steps) = data.get("steps").and_then(|v| v.as_array()) {
+        for step in steps {
+            if step.get("type").and_then(|v| v.as_str()) != Some("model_output") { continue; }
+            if let Some(content) = step.get("content").and_then(|v| v.as_array()) {
+                for block in content {
+                    if block.get("type").and_then(|v| v.as_str()) == Some("text") {
+                        if let Some(text) = block.get("text").and_then(|v| v.as_str()).filter(|s| !s.trim().is_empty()) {
+                            text_parts.push(text);
+                        }
+                    }
+                }
             }
-        }).collect::<Vec<_>>().join("\n"))
-        .filter(|s| !s.trim().is_empty());
-    text.ok_or_else(|| {
-        let detail = data.pointer("/error/message").and_then(|v| v.as_str());
-        detail.map(|m| format!("Gemini returned no text: {m}")).unwrap_or_else(|| "Gemini returned no text. Try again.".into())
-    })
+        }
+    }
+    // Retain compatibility with older Interactions responses.
+    if text_parts.is_empty() {
+        if let Some(output) = data.get("output").and_then(|v| v.as_array()) {
+            for block in output {
+                if block.get("type").and_then(|v| v.as_str()) == Some("text") {
+                    if let Some(text) = block.get("text").and_then(|v| v.as_str()).filter(|s| !s.trim().is_empty()) {
+                        text_parts.push(text);
+                    }
+                }
+            }
+        }
+    }
+    if !text_parts.is_empty() {
+        return Ok(text_parts.join("\n"));
+    }
+    let response_status = data.get("status").and_then(|v| v.as_str()).unwrap_or("unknown");
+    let step_types = data.get("steps").and_then(|v| v.as_array())
+        .map(|steps| steps.iter().filter_map(|step| step.get("type").and_then(|v| v.as_str())).collect::<Vec<_>>().join(", "))
+        .filter(|s| !s.is_empty()).unwrap_or_else(|| "none".into());
+    Err(format!("Gemini returned no text (response status: {response_status}; response steps: {step_types}). Try again."))
 }
 
 struct RunningCommand(std::sync::Mutex<Option<std::process::Child>>);
