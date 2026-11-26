@@ -112,7 +112,8 @@ async fn ask_gemini(prompt: String, context: String, model: String) -> Result<St
     // Background interactions return an ID before their model output is ready. Fetch the
     // completed resource instead of reporting a misleading “no text” error.
     if data.get("status").and_then(|v| v.as_str()) == Some("in_progress") {
-        if let Some(id) = data.get("id").and_then(|v| v.as_str()) {
+        let interaction_id = data.get("id").and_then(|v| v.as_str()).map(str::to_string);
+        if let Some(id) = interaction_id {
             for _ in 0..60 {
                 tokio::time::sleep(std::time::Duration::from_secs(1)).await;
                 let poll = client
