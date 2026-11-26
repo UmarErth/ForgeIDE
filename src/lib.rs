@@ -74,11 +74,15 @@ fn git_status(root: String) -> Result<String, String> {
 }
 
 #[tauri::command]
-async fn ask_gemini(prompt: String, context: String) -> Result<String, String> {
+async fn ask_gemini(prompt: String, context: String, model: String) -> Result<String, String> {
     let key = key_entry()?.get_password().map_err(|_| "Add your Gemini API key in Settings to use AI.".to_string())?;
-    let content = format!("Editor context:\n{context}\n\nUser request:\n{prompt}");
+    let allowed_models = ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash-lite", "gemini-4-hydrogen"];
+    if !allowed_models.contains(&model.as_str()) {
+        return Err("Choose a supported Gemini model from the model menu.".into());
+    }
+    let content = format!("Conversation and editor context:\n{context}\n\nUser request:\n{prompt}");
     let body = serde_json::json!({
-        "model": "gemini-3.8-flash",
+        "model": model,
         "system_instruction": "You are Forge, a careful coding assistant inside a developer's code editor. Be concise, explain assumptions, and return code in Markdown fences when useful.",
         "input": content,
         "generation_config": { "temperature": 0.35, "max_output_tokens": 4096 }
