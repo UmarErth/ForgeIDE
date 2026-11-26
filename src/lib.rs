@@ -32,6 +32,131 @@ fn get_profile_name() -> Option<String> {
     Entry::new(SERVICE, PROFILE_ACCOUNT).ok()?.get_password().ok()
 }
 
+const SETTINGS_FILE: &str = "forge-settings.json";
+const CHAT_FILE: &str = "chats.json";
+
+#[derive(Serialize, Deserialize, Default)]
+struct ForgePreferences {
+    project_directory: Option<String>,
+    chat_directory: Option<String>,
+}
+
+#[derive(Serialize)]
+struct ForgeLocations {
+    project_directory: String,
+    chat_directory: String,
+    default_project_directory: String,
+    default_chat_directory: String,
+}
+
+fn preferences_file(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+    let directory = app.path().app_config_dir().map_err(|e| format!("Could not locate Forge settings: {e}"))?;
+    std::fs::create_dir_all(&directory).map_err(|e| format!("Could not create Forge settings folder: {e}"))?;
+    Ok(directory.join(SETTINGS_FILE))
+}
+
+fn read_preferences(app: &tauri::AppHandle) -> Result<ForgePreferences, String> {
+    let path = preferences_file(app)?;
+    if !path.exists() { return Ok(ForgePreferences::default()); }
+    let contents = std::fs::read_to_string(path).map_err(|e| format!("Could not read Forge settings: {e}"))?;
+    serde_json::from_str(&contents).map_err(|e| format!("Could not parse Forge settings: {e}"))
+}
+
+fn write_preferences(app: &tauri::AppHandle, prefs: &ForgePreferences) -> Result<(), String> {
+    let path = preferences_file(app)?;
+    let contents = serde_json::to_string_pretty(prefs).map_err(|e| e.to_string())?;
+    std::fs::write(path, contents).map_err(|e| format!("Could not save Forge settings: {e}"))
+}
+
+fn default_chat_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+    app.path().app_data_dir().map_err(|e| format!("Could not locate Forge data folder: {e}"))
+}
+
+fn chat_dir(app: &tauri::AppHandle, prefs: &ForgePreferences) -> Result<std::path::PathBuf, String> {
+    match &prefs.chat_directory {
+        Some(path) => Ok(std::path::PathBuf::from(path)),
+        None => default_chat_dir(app),
+    }
+}
+
+#[tauri::command]
+fn get_forge_locations(app: tauri::AppHandle) -> Result<ForgeLocations, String> {
+    let prefs = read_preferences(&app)?;
+    let default_project = app.path().document_dir().map_err(|e| format!("Could not locate Documents folder: {e}"))?.join("Forge IDE Projects");
+    let default_chat = default_chat_dir(&app)?;
+    Ok(ForgeLocations {
+        project_directory: prefs.project_directory.unwrap_or_else(|| default_project.to_string_lossy().to_string()),
+        chat_directory: prefs.chat_directory.unwrap_or_else(|| default_chat.to_string_lossy().to_string()),
+        default_project_directory: default_project.to_string_lossy().to_string(),
+        default_chat_directory: default_chat.to_string_lossy().to_string(),
+    })
+}
+
+#[tauri::command]
+fn set_project_directory(path: String, app: tauri::AppHandle) -> Result<(), String> {
+    let directory = std::path::PathBuf::from(path.trim());
+    if !directory.is_dir() { return Err("Choose an existing folder for your projects.".into()); }
+    let mut prefs = read_preferences(&app)?;
+    prefs.project_directory = Some(directory.to_string_lossy().to_string());
+    write_preferences(&app, &prefs)
+}
+
+#[tauri::command]
+fn reset_project_directory(app: tauri::AppHandle) -> Result<(), String> {
+    let mut prefs = read_preferences(&app)?;
+    prefs.project_directory = None;
+    write_preferences(&app, &prefs)
+}
+
+fn change_chat_directory(app: &tauri::AppHandle, new_directory: Option<std::path::PathBuf>) -> Result<(), String> {
+    let mut prefs = read_preferences(app)?;
+    let old_directory = chat_dir(app, &prefs)?;
+    let target_directory = match &new_directory {
+        Some(path) => path.clone(),
+        None => default_chat_dir(app)?,
+    };
+    if !target_directory.is_dir() { return Err("Choose an existing folder for saved chats.".into()); }
+    if old_directory != target_directory {
+        let old_chats = old_directory.join(CHAT_FILE);
+        let new_chats = target_directory.join(CHAT_FILE);
+        if old_chats.exists() && !new_chats.exists() {
+            std::fs::copy(old_chats, new_chats).map_err(|e| format!("Could not move saved chats to the new folder: {e}"))?;
+        }
+    }
+    prefs.chat_directory = new_directory.map(|path| path.to_string_lossy().to_string());
+    write_preferences(app, &prefs)
+}
+
+#[tauri::command]
+fn set_chat_directory(path: String, app: tauri::AppHandle) -> Result<(), String> {
+    let directory = std::path::PathBuf::from(path.trim());
+    change_chat_directory(&app, Some(directory))
+}
+
+#[tauri::command]
+fn reset_chat_directory(app: tauri::AppHandle) -> Result<(), String> {
+    change_chat_directory(&app, None)
+}
+
+#[tauri::command]
+fn load_saved_chats(app: tauri::AppHandle) -> Result<String, String> {
+    let prefs = read_preferences(&app)?;
+    let directory = chat_dir(&app, &prefs)?;
+    let path = directory.join(CHAT_FILE);
+    if !path.exists() { return Ok("[]".into()); }
+    std::fs::read_to_string(path).map_err(|e| format!("Could not read saved chats: {e}"))
+}
+
+#[tauri::command]
+fn save_saved_chats(json: String, app: tauri::AppHandle) -> Result<(), String> {
+    let parsed: serde_json::Value = serde_json::from_str(&json).map_err(|e| format!("Chat history is not valid JSON: {e}"))?;
+    if !parsed.is_array() { return Err("Chat history must be a list.".into()); }
+    let prefs = read_preferences(&app)?;
+    let directory = chat_dir(&app, &prefs)?;
+    std::fs::create_dir_all(&directory).map_err(|e| format!("Could not create chat folder: {e}"))?;
+    std::fs::write(directory.join(CHAT_FILE), json).map_err(|e| format!("Could not save chats: {e}"))
+}
+
 #[derive(Serialize)]
 struct SearchMatch { path: String, name: String, relative_path: String, line: usize, preview: String }
 
@@ -318,7 +443,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
-        .invoke_handler(tauri::generate_handler![save_api_key, api_key_status, get_profile_name, save_profile_name, search_project, git_status, ask_gemini, read_text_file, write_text_file, list_directory, run_command, stop_command])
+        .invoke_handler(tauri::generate_handler![save_api_key, api_key_status, get_profile_name, save_profile_name, get_forge_locations, set_project_directory, reset_project_directory, set_chat_directory, reset_chat_directory, load_saved_chats, save_saved_chats, search_project, git_status, ask_gemini, read_text_file, write_text_file, list_directory, run_command, stop_command])
         .setup(|app| {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Regular);
