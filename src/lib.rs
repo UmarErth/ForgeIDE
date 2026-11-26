@@ -120,6 +120,99 @@ async fn ask_gemini(prompt: String, context: String, model: String) -> Result<St
     })
 }
 
+struct RunningCommand(std::sync::Mutex<Option<std::process::Child>>);
+
+fn read_command_stream(mut reader: impl std::io::Read) -> String {
+    let mut output = Vec::new();
+    let mut chunk = [0u8; 8192];
+    let mut truncated = false;
+    loop {
+        match reader.read(&mut chunk) {
+            Ok(0) | Err(_) => break,
+            Ok(n) => {
+                let remaining = 1_000_000usize.saturating_sub(output.len());
+                let keep = remaining.min(n);
+                output.extend_from_slice(&chunk[..keep]);
+                if keep < n { truncated = true; }
+            }
+        }
+    }
+    let mut text = String::from_utf8_lossy(&output).to_string();
+    if truncated { text.push_str("\n… output truncated after 1 MB …\n"); }
+    text
+}
+
+#[tauri::command]
+fn run_command(command: String, cwd: Option<String>, state: tauri::State<'_, RunningCommand>) -> Result<String, String> {
+    let command = command.trim();
+    if command.is_empty() { return Err("Type a command to run.".into()); }
+    if command.len() > 16_384 { return Err("Command is too long (maximum 16,384 characters).".into()); }
+    {
+        let active = state.0.lock().map_err(|_| "Command runner is unavailable.".to_string())?;
+        if active.is_some() { return Err("A command is already running.".into()); }
+    }
+    let working_dir = match cwd {
+        Some(path) => {
+            let path = std::path::PathBuf::from(path);
+            if !path.is_dir() { return Err("The selected working folder no longer exists.".into()); }
+            path
+        }
+        None => std::env::current_dir().map_err(|e| format!("Could not determine the working folder: {e}"))?,
+    };
+    #[cfg(target_os = "windows")]
+    let mut child = std::process::Command::new("cmd.exe").args(["/C", command]).current_dir(&working_dir).stdin(std::process::Stdio::null()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped()).spawn().map_err(|e| format!("Could not start command: {e}"))?;
+    #[cfg(not(target_os = "windows"))]
+    let mut child = std::process::Command::new("/bin/sh").args(["-lc", command]).current_dir(&working_dir).stdin(std::process::Stdio::null()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped()).spawn().map_err(|e| format!("Could not start command: {e}"))?;
+    let stdout = child.stdout.take().ok_or_else(|| "Could not read command output.".to_string())?;
+    let stderr = child.stderr.take().ok_or_else(|| "Could not read command errors.".to_string())?;
+    let out_reader = std::thread::spawn(move || read_command_stream(stdout));
+    let err_reader = std::thread::spawn(move || read_command_stream(stderr));
+    {
+        let mut active = state.0.lock().map_err(|_| "Command runner is unavailable.".to_string())?;
+        if active.is_some() {
+            let _ = child.kill();
+            return Err("A command is already running.".into());
+        }
+        *active = Some(child);
+    }
+    let status = loop {
+        let result = {
+            let mut active = state.0.lock().map_err(|_| "Command runner is unavailable.".to_string())?;
+            match active.as_mut() {
+                Some(child) => child.try_wait().map_err(|e| format!("Could not check command status: {e}"))?,
+                None => return Err("Command was stopped.".into()),
+            }
+        };
+        if let Some(status) = result { break status; }
+        std::thread::sleep(std::time::Duration::from_millis(80));
+    };
+    let _ = state.0.lock().map_err(|_| "Command runner is unavailable.".to_string())?.take();
+    let stdout = out_reader.join().unwrap_or_else(|_| "Could not collect command output.".into());
+    let stderr = err_reader.join().unwrap_or_else(|_| "Could not collect command errors.".into());
+    let mut result = String::new();
+    if !stdout.is_empty() { result.push_str(&stdout); }
+    if !stderr.is_empty() {
+        if !result.is_empty() && !result.ends_with('\n') { result.push('\n'); }
+        result.push_str(&stderr);
+    }
+    if !status.success() {
+        if !result.is_empty() && !result.ends_with('\n') { result.push('\n'); }
+        result.push_str(&format!("[process exited with {}]", status.code().map(|c| c.to_string()).unwrap_or_else(|| "no exit code".into())));
+    } else if result.is_empty() {
+        result.push_str("[command completed successfully with no output]");
+    }
+    Ok(result)
+}
+
+#[tauri::command]
+fn stop_command(state: tauri::State<'_, RunningCommand>) -> Result<bool, String> {
+    let mut active = state.0.lock().map_err(|_| "Command runner is unavailable.".to_string())?;
+    match active.as_mut() {
+        Some(child) => { child.kill().map_err(|e| format!("Could not stop command: {e}"))?; Ok(true) }
+        None => Ok(false),
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 struct EditorFile { name: String, path: String, content: String }
 
@@ -151,10 +244,11 @@ fn list_directory(path: String) -> Result<Vec<serde_json::Value>, String> {
 
 pub fn run() {
     tauri::Builder::default()
+        .manage(RunningCommand(std::sync::Mutex::new(None)))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
-        .invoke_handler(tauri::generate_handler![save_api_key, api_key_status, get_profile_name, save_profile_name, search_project, git_status, ask_gemini, read_text_file, write_text_file, list_directory])
+        .invoke_handler(tauri::generate_handler![save_api_key, api_key_status, get_profile_name, save_profile_name, search_project, git_status, ask_gemini, read_text_file, write_text_file, list_directory, run_command, stop_command])
         .setup(|app| {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Regular);
