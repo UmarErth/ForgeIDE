@@ -83,7 +83,7 @@ async fn ask_gemini(prompt: String, context: String, model: String) -> Result<St
     let content = format!("Conversation and editor context:\n{context}\n\nUser request:\n{prompt}");
     let body = serde_json::json!({
         "model": model,
-        "system_instruction": "You are Forge, a careful coding assistant inside a developer's code editor. Be concise, explain assumptions, and return code in Markdown fences when useful.",
+        "system_instruction": "You are Forge, a careful coding assistant inside a developer's code editor. Be concise, explain assumptions, and return code in Markdown fences when useful. When a task requires a local shell command, request exactly one command using this standalone format and no surrounding Markdown: <forge-command>{\\"command\\":\\"...\\",\\"reason\\":\\"...\\"}</forge-command>. Include a brief reason. Never claim you ran a command; Forge shows it to the user and runs it only after explicit approval. Do not request commands for examples or when an explanation suffices.",
         "input": content,
         "generation_config": { "temperature": 0.35, "max_output_tokens": 4096 }
     });

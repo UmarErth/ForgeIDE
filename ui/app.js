@@ -31,14 +31,59 @@ function showPanel(panel){document.querySelectorAll('.activity-btn[data-panel]')
 function bindStartFolder(){$('start-folder')?.addEventListener('click',chooseFolder);}
 async function searchProject(query){const out=$('search-results');if(!out)return;if(!query.trim()){out.textContent='Type to search this project.';return;}out.textContent='Searching…';try{const rows=await invoke('search_project',{root:rootPath,query:query.trim()});if(!rows.length){out.textContent='No matches found.';return;}out.innerHTML=rows.map(r=>`<button class="search-result" data-path="${esc(r.path)}"><b>${esc(r.name)}</b><span>${esc(r.preview)}</span><small>${esc(r.relative_path)}:${r.line}</small></button>`).join('');out.querySelectorAll('.search-result').forEach(b=>b.onclick=async()=>{try{const f=await invoke('read_text_file',{path:b.dataset.path});setCurrent(f);const match=f.content.split('\n').findIndex(line=>line.toLowerCase().includes(query.toLowerCase()));$('code').focus();const pos=f.content.split('\n').slice(0,match).join('\n').length+(match?1:0);$('code').setSelectionRange(pos,pos);updateCursor();}catch(e){toast(e);}});}catch(e){out.textContent=String(e);}}
 async function refreshGit(){try{$('git-output').textContent=await invoke('git_status',{root:rootPath});}catch(e){$('git-output').textContent=String(e);}}
-function addMessage(text,kind='assistant'){const d=document.createElement('div');d.className='chat-message '+kind;d.textContent=text;$('ai-content').appendChild(d);$('ai-content').scrollTop=$('ai-content').scrollHeight;return d;}
+function renderMessage(message){
+ if(message.kind==='command'){
+  const card=document.createElement('div');card.className='chat-message command-card';
+  const title=document.createElement('strong');title.textContent='Forge wants to run a command';card.appendChild(title);
+  const reason=document.createElement('div');reason.className='command-reason';reason.textContent=message.reason||'Requested by Forge AI';card.appendChild(reason);
+  const code=document.createElement('pre');code.className='command-preview';code.textContent=message.command;card.appendChild(code);
+  const actions=document.createElement('div');actions.className='command-approval';
+  const run=document.createElement('button');run.className='primary-btn';run.textContent=message.state==='running'?'Running…':message.state==='complete'?'Completed':message.state==='dismissed'?'Dismissed':'Review & run';run.disabled=['running','complete','dismissed'].includes(message.state);run.onclick=()=>runApprovedCommand(message.id);actions.appendChild(run);
+  const dismiss=document.createElement('button');dismiss.className='secondary-btn';dismiss.textContent='Dismiss';dismiss.disabled=['running','complete','dismissed'].includes(message.state);dismiss.onclick=()=>{message.state='dismissed';saveChats();renderActiveChat();};actions.appendChild(dismiss);card.appendChild(actions);
+  $('ai-content').appendChild(card);return;
+ }
+ const d=document.createElement('div');d.className='chat-message '+(message.kind==='error'?'assistant error':message.kind||'assistant');d.textContent=message.text||'';$('ai-content').appendChild(d);
+}
+function addMessage(text,kind='assistant'){const m={kind,text};renderMessage(m);$('ai-content').scrollTop=$('ai-content').scrollHeight;return {setText(value){m.text=value;},classList:{add(name){if(name==='error')m.kind='error';}},message:m};}
 function activeChat(){return chats.find(c=>c.id===currentChatId)||null;}
 function saveChats(){try{localStorage.setItem(CHAT_STORE,JSON.stringify(chats));}catch(e){toast('Could not save chat history in this app profile.');}}
 function renderChats(){const select=$('chat-select');if(!select)return;select.innerHTML=chats.slice().sort((a,b)=>b.updatedAt-a.updatedAt).map(c=>'<option value="'+esc(c.id)+'">'+esc(c.title||'New chat')+'</option>').join('');select.value=currentChatId||'';}
 function showEmptyChat(){ $('ai-content').innerHTML='<div class="ai-empty"><div class="ai-orb">✳</div><h2>How can we<br>help you build?</h2><p>Ask a question about your project or get a hand with your current file.</p><div class="suggestions"><button class="suggestion" data-prompt="Explain the current file to me">✧ <span>Explain this file</span><b>→</b></button><button class="suggestion" data-prompt="Review my code for issues and improvements">◉ <span>Review this code</span><b>→</b></button><button class="suggestion" data-prompt="Help me plan a clean implementation for my next feature">⌘ <span>Plan a feature</span><b>→</b></button></div></div>';document.querySelectorAll('.suggestion').forEach(b=>b.onclick=()=>sendPrompt(b.dataset.prompt));}
-function selectChat(id){currentChatId=id;const chat=activeChat();if(chat&&supportedModels.includes(chat.model)){selectedModel=chat.model;$('model-select').value=selectedModel;localStorage.setItem(MODEL_STORE,selectedModel);}renderChats();if(!chat||!chat.messages.length){showEmptyChat();return;}$('ai-content').innerHTML='';for(const m of chat.messages)addMessage(m.text,m.kind==='error'?'assistant error':m.kind||'assistant');}
+function renderActiveChat(){const chat=activeChat();if(!chat||!chat.messages.length){showEmptyChat();return;}$('ai-content').innerHTML='';for(const m of chat.messages)renderMessage(m);$('ai-content').scrollTop=$('ai-content').scrollHeight;}
+function selectChat(id){currentChatId=id;const chat=activeChat();if(chat&&supportedModels.includes(chat.model)){selectedModel=chat.model;$('model-select').value=selectedModel;localStorage.setItem(MODEL_STORE,selectedModel);}renderChats();renderActiveChat();}
 function newChat(){const chat={id:crypto.randomUUID(),title:'New chat',model:selectedModel,messages:[],updatedAt:Date.now()};chats.push(chat);saveChats();selectChat(chat.id);$('ai-prompt').focus();}
-async function sendPrompt(override){const prompt=(override||$('ai-prompt').value).trim();if(!prompt)return;let chat=activeChat();if(!chat){newChat();chat=activeChat();}$('ai-prompt').value='';if($('ai-content').querySelector('.ai-empty'))$('ai-content').innerHTML='';const prior=chat.messages.slice();chat.messages.push({kind:'user',text:prompt});if(chat.title==='New chat')chat.title=prompt.slice(0,54)+(prompt.length>54?'…':'');chat.model=selectedModel;chat.updatedAt=Date.now();addMessage(prompt,'user');saveChats();renderChats();const editorContext=current?'File: '+current.name+'\n\n'+$('code').value.slice(0,14000):rootPath?'Project: '+rootPath+'\nNo file is currently open.':'No project or file is open.';const history=prior.map(m=>(m.kind==='user'?'User':'Assistant')+': '+m.text).join('\n\n');const context=[history?'Previous conversation:\n'+history:'',editorContext].filter(Boolean).join('\n\n');const pending=addMessage('Thinking…');$('send-ai').disabled=true;try{const answer=await invoke('ask_gemini',{prompt,context,model:selectedModel});pending.textContent=answer;chat.messages.push({kind:'assistant',text:answer});}catch(e){pending.classList.add('error');pending.textContent=String(e);chat.messages.push({kind:'error',text:String(e)});}finally{chat.updatedAt=Date.now();saveChats();renderChats();$('send-ai').disabled=false;$('ai-content').scrollTop=$('ai-content').scrollHeight;}}
+function editorContext(){return current?'File: '+current.name+'\n\n'+$('code').value.slice(0,14000):rootPath?'Project: '+rootPath+'\nNo file is currently open.':'No project or file is open.';}
+function conversationContext(chat){const transcript=chat.messages.map(m=>{if(m.kind==='user')return 'User: '+m.text;if(m.kind==='command')return 'Forge requested command '+m.command+' because: '+m.reason;if(m.kind==='command-result')return 'Command result: '+m.text;return 'Assistant: '+(m.text||'');}).join('\n\n');return [transcript?'Conversation so far:\n'+transcript:'',editorContext()].filter(Boolean).join('\n\n');}
+function acceptGeminiAnswer(answer,chat,pending){
+ const match=answer.match(/<forge-command>\s*([\s\S]*?)\s*<\/forge-command>/i);
+ if(match){try{const proposal=JSON.parse(match[1]);if(typeof proposal.command==='string'&&proposal.command.trim()&&proposal.command.length<=16384){const msg={id:crypto.randomUUID(),kind:'command',command:proposal.command,reason:typeof proposal.reason==='string'?proposal.reason:'Requested by Forge AI',state:'awaiting-approval'};chat.messages.push(msg);pending.setText('');}}catch{pending.setText(answer);chat.messages.push({kind:'assistant',text:answer});}}
+ else{pending.setText(answer);chat.messages.push({kind:'assistant',text:answer});}
+}
+async function sendPrompt(override){
+ const prompt=(override||$('ai-prompt').value).trim();if(!prompt)return;let chat=activeChat();if(!chat){newChat();chat=activeChat();}$('ai-prompt').value='';if($('ai-content').querySelector('.ai-empty'))$('ai-content').innerHTML='';
+ chat.messages.push({kind:'user',text:prompt});if(chat.title==='New chat')chat.title=prompt.slice(0,54)+(prompt.length>54?'…':'');chat.model=selectedModel;chat.updatedAt=Date.now();renderActiveChat();saveChats();renderChats();
+ const pending=addMessage('Thinking…');$('send-ai').disabled=true;
+ try{const answer=await invoke('ask_gemini',{prompt,context:conversationContext(chat),model:selectedModel});acceptGeminiAnswer(answer,chat,pending);}
+ catch(e){pending.classList.add('error');pending.setText(String(e));chat.messages.push({kind:'error',text:String(e)});}
+ finally{chat.updatedAt=Date.now();saveChats();renderChats();if(currentChatId===chat.id)renderActiveChat();$('send-ai').disabled=false;}
+}
+async function runApprovedCommand(messageId){
+ const chat=activeChat();if(!chat)return;const message=chat.messages.find(m=>m.id===messageId&&m.kind==='command');if(!message||message.state==='running'||message.state==='complete'||message.state==='dismissed')return;
+ const cwd=rootPath||(current?.path?current.path.replace(/[\\/][^\\/]*$/,''):null);
+ const approved=confirm('Forge AI requests permission to run this command on your computer.\n\nWorking folder: '+(cwd||'application folder')+'\n\nCommand:\n'+message.command+'\n\nReason:\n'+message.reason+'\n\nRun it now?');
+ if(!approved)return;
+ message.state='running';saveChats();if(currentChatId===chat.id)renderActiveChat();
+ const panel=$('terminal-panel');panel.classList.remove('hidden');$('terminal-cwd').textContent='Working folder: '+(cwd||'application folder');const output=$('terminal-output');output.textContent='$ '+message.command+'\n[Running command requested by Forge AI…]\n';$('terminal-run').disabled=true;$('terminal-stop').classList.remove('hidden');
+ let result;try{result=await invoke('run_command',{command:message.command,cwd});}
+ catch(e){result=String(e);}
+ finally{$('terminal-run').disabled=false;$('terminal-stop').classList.add('hidden');}
+ // The approval and command result are kept in this chat; Gemini receives the result before continuing.
+ output.textContent='$ '+message.command+'\n'+result;output.scrollTop=output.scrollHeight;message.state='complete';chat.messages.push({kind:'command-result',text:('$ '+message.command+'\n'+result).slice(-12000)});chat.updatedAt=Date.now();saveChats();
+ const pending=addMessage('Command finished. Forge is reviewing the result…');$('send-ai').disabled=true;
+ try{const prompt='The user approved and ran the command you requested. Continue the original task using its output. If another command is needed, request exactly one using <forge-command>{"command":"...","reason":"..."}</forge-command>. Otherwise answer normally.';const answer=await invoke('ask_gemini',{prompt,context:conversationContext(chat),model:chat.model||selectedModel});acceptGeminiAnswer(answer,chat,pending);}
+ catch(e){pending.classList.add('error');pending.setText(String(e));chat.messages.push({kind:'error',text:String(e)});}
+ finally{chat.updatedAt=Date.now();saveChats();renderChats();if(currentChatId===chat.id)renderActiveChat();$('send-ai').disabled=false;}
+}
 function updateCursor(){const v=$('code'),before=v.value.slice(0,v.selectionStart),lines=before.split('\n');$('cursor-status').textContent=`Ln ${lines.length}, Col ${lines.at(-1).length+1}`;}
 function setup(){
  ['open-folder','start-folder','welcome-folder'].forEach(id=>$(id)?.addEventListener('click',chooseFolder));
