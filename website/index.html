@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#090b10">
+  <meta name="description" content="Forge IDE is a focused, modern code workspace with Gemini alongside you. Native Windows, macOS, and Linux builds. No Electron.">
+  <meta property="og:title" content="Forge IDE — Build with clarity">
+  <meta property="og:description" content="A focused code workspace, with Gemini alongside you.">
+  <meta property="og:type" content="website">
+  <title>Forge IDE — Build with clarity</title>
+  <link rel="icon" type="image/png" href="../icons/icon.png">
+  <link rel="stylesheet" href="styles.css">
+  <script defer src="main.js"></script>
+</head>
+<body>
+  <div class="ambient ambient-one"></div><div class="ambient ambient-two"></div>
+  <header class="nav wrap">
+    <a class="wordmark" href="#top" aria-label="Forge IDE home"><span class="mark">F</span><span>forge<span class="wordmark-muted">ide</span></span></a>
+    <nav><a href="#features">Features</a><a href="#downloads">Downloads</a><a href="https://github.com/UmarErth/ForgeIDE">Source</a></nav>
+    <a class="nav-cta" href="https://github.com/UmarErth/ForgeIDE/releases/latest">Get Forge <span>↗</span></a>
+  </header>
+
+  <main id="top">
+    <section class="hero wrap">
+      <div class="hero-copy">
+        <div class="eyebrow"><span class="pulse"></span> YOUR WORKSPACE, REIMAGINED</div>
+        <h1>Build with<br><span>clarity.</span></h1>
+        <p class="lead">A focused code workspace with Gemini right by your side. Thoughtful tools, a quieter interface, and room for your best work.</p>
+        <div class="hero-actions"><a class="button button-primary" href="https://github.com/UmarErth/ForgeIDE/releases/latest" data-download="windows">Download Forge <span>↓</span></a><a class="button button-ghost" href="https://github.com/UmarErth/ForgeIDE">Explore the source <span>↗</span></a></div>
+        <div class="hero-meta"><span><i class="meta-dot"></i> Windows, macOS &amp; Linux</span><span>Rust · Tauri · Gemini</span></div>
+      </div>
+      <div class="editor-frame" aria-label="Illustration of the Forge IDE editor">
+        <div class="window-top"><div class="window-lights"><i></i><i></i><i></i></div><span>forge-ide <b>—</b> workspace</span><span class="window-menu">···</span></div>
+        <div class="mock-workspace">
+          <aside class="mock-rail"><b class="rail-active">▤</b><b>⌕</b><b>⑂</b><span></span><b>⚙</b></aside>
+          <aside class="mock-files"><div class="mock-label">EXPLORER <span>＋</span></div><div class="file-row">⌄ &nbsp;forge-ide</div><div class="file-row indent">⌄ &nbsp;src</div><div class="file-row indent2 selected"><i>R</i> &nbsp;main.rs</div><div class="file-row indent2"><i class="icon-blue">R</i> &nbsp;lib.rs</div><div class="file-row indent">› &nbsp;ui</div><div class="file-row indent">◇ &nbsp;Cargo.toml</div></aside>
+          <section class="mock-editor"><div class="mock-tab"><i>R</i> main.rs <span>×</span></div><div class="mock-path">src / main.rs</div><div class="code-lines"><div><em>1</em><code><s>use</s> forge_ide::App;</code></div><div><em>2</em></div><div><em>3</em><code><s>fn</s> <a>main</a>() {</code></div><div><em>4</em><code>&nbsp;&nbsp;&nbsp;&nbsp;<b>let</b> workspace = Workspace::new();</code></div><div><em>5</em><code>&nbsp;&nbsp;&nbsp;&nbsp;workspace.<a>build</a>();</code></div><div><em>6</em><code>}</code></div><div><em>7</em></div><div><em>8</em><code><small>// make space for the next idea</small></code></div><div><em>9</em><code><span class="cursor"></span></code></div></div><div class="mock-status">● &nbsp;Ready <span>Ln 9, Col 1 &nbsp; UTF-8 &nbsp; Rust</span></div></section>
+          <aside class="mock-ai"><div class="ai-caption"><i>✳</i> Forge AI <span>Gemini</span></div><div class="ai-hello"><b>A good idea<br>starts here.</b><p>Your code,<br>with a little<br>more clarity.</p><div class="ai-chip">✧ &nbsp; Explain this file</div><div class="ai-chip">◉ &nbsp; Review my code</div></div><div class="ai-input">Ask Forge AI… <b>↑</b></div></aside>
+        </div>
+      </div>
+    </section>
+
+    <section class="platform-strip wrap"><span>ONE WORKSPACE</span><div class="platforms"><b>⊞ &nbsp; Windows</b><b>◉ &nbsp; macOS</b><b>◈ &nbsp; Linux</b></div><a href="https://github.com/UmarErth/ForgeIDE/releases/latest">Get the latest <span>↗</span></a></section>
+
+    <section class="features wrap" id="features">
+      <div class="section-kicker">MADE FOR THE FLOW</div><h2>Everything in its<br><span>right place.</span></h2>
+      <div class="feature-grid">
+        <article class="feature-card"><div class="feature-icon icon-folder">▤</div><h3>Your project, in focus</h3><p>Keep the file tree, editor, and workspace together. Open a folder and get straight to the work.</p><div class="mini-tree"><span>⌄ &nbsp; project</span><span>　⌄ &nbsp; src</span><span>　　R &nbsp; main.rs</span><span>　　R &nbsp; lib.rs</span><span>　◇ &nbsp; Cargo.toml</span></div></article>
+        <article class="feature-card"><div class="feature-icon icon-ai">✳</div><h3>Gemini, in context</h3><p>Ask about the file you’re working on. Get an explanation, a review, or a clear path into your next feature.</p><div class="prompt-preview"><i>✧</i> Explain this file <span>→</span><br><i>◉</i> Review my code <span>→</span><br><i>⌘</i> Plan a feature <span>→</span></div></article>
+        <article class="feature-card"><div class="feature-icon icon-safe">⌑</div><h3>Your key stays yours</h3><p>Connect your own Gemini API key during setup. Forge stores it in your system’s secure credential store.</p><div class="secure-note"><span>✓</span> OS keychain secured <i>••••••••••••••••</i></div></article>
+      </div>
+    </section>
+
+    <section class="download-section" id="downloads"><div class="download-inner wrap"><div><div class="section-kicker">READY WHEN YOU ARE</div><h2>Your next idea<br><span>starts here.</span></h2><p>Free and open source. Choose your platform and make it yours.</p><div class="download-links"><a class="button button-primary" id="download-windows" href="https://github.com/UmarErth/ForgeIDE/releases/latest">Windows <span>↓</span></a><a class="button button-ghost" id="download-macos" href="https://github.com/UmarErth/ForgeIDE/releases/latest">macOS <span>↓</span></a><a class="button button-ghost" id="download-linux" href="https://github.com/UmarErth/ForgeIDE/releases/latest">Linux <span>↓</span></a></div><div class="release-note" id="release-note">Latest builds are available from GitHub Releases.</div></div><div class="download-art"><div class="art-glow"></div><div class="art-card"><span class="mark">F</span><b>forge<span>ide</span></b><small>MAKE SOMETHING MEANINGFUL.</small><div class="art-version" id="version-label">OPEN SOURCE · RUST · GEMINI</div></div></div></div></section>
+  </main>
+
+  <footer class="footer wrap"><a class="wordmark" href="#top"><span class="mark">F</span><span>forge<span class="wordmark-muted">ide</span></span></a><span>Made for the work that matters.</span><div><a href="https://github.com/UmarErth/ForgeIDE">GitHub</a><a href="https://github.com/UmarErth/ForgeIDE/blob/main/LICENSE">MIT License</a><a href="https://github.com/UmarErth/ForgeIDE/issues">Support</a></div><small>© 2026 UmarErth</small></footer>
+</body>
+</html>

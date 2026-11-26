@@ -1,0 +1,111 @@
+name: Build and publish releases
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Optional release tag (for example v0.1.0). Leave blank to build downloads only."
+        required: false
+        type: string
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            platform: macOS
+            bundles: app,dmg
+            artifact: forgeide-macos
+          - os: windows-latest
+            platform: Windows
+            bundles: nsis,msi
+            artifact: forgeide-windows
+          - os: ubuntu-24.04
+            platform: Linux
+            bundles: appimage
+            artifact: forgeide-linux
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install Linux desktop build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential curl wget file pkg-config libxdo-dev libssl-dev librsvg2-dev libayatana-appindicator3-dev patchelf libfuse2t64 libdbus-1-dev libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev
+      - name: Install frontend dependencies
+        run: npm ci
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --version '^2' --locked
+      - name: Generate cross-platform icons
+        if: runner.os == 'macOS' || runner.os == 'Linux'
+        run: python3 scripts/create-platform-icons.py
+      - name: Build app bundles
+        shell: bash
+        run: cargo tauri build --bundles "${{ matrix.bundles }}"
+      - name: Stage macOS downloads
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          mkdir -p release-assets/macos
+          cp target/release/bundle/dmg/*.dmg release-assets/macos/ForgeIDE-macOS.dmg
+          app=$(find target/release/bundle/macos -maxdepth 1 -name '*.app' -print -quit)
+          ditto -c -k --sequesterRsrc --keepParent "$app" release-assets/macos/ForgeIDE-macOS.app.zip
+      - name: Stage Windows downloads
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force release-assets/windows, target/portable | Out-Null
+          $setup = Get-ChildItem target/release/bundle/nsis -Filter '*setup.exe' | Select-Object -First 1
+          $msi = Get-ChildItem target/release/bundle/msi -Filter '*.msi' | Select-Object -First 1
+          Copy-Item $setup.FullName release-assets/windows/ForgeIDE-Windows-Setup.exe
+          Copy-Item $msi.FullName release-assets/windows/ForgeIDE-Windows.msi
+          Copy-Item target/release/forge-ide.exe target/portable/Forge-IDE.exe -Force
+          Copy-Item target/portable/Forge-IDE.exe release-assets/windows/ForgeIDE-Windows-Portable.exe
+      - name: Stage Linux download
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          mkdir -p release-assets/linux
+          cp target/release/bundle/appimage/*.AppImage release-assets/linux/ForgeIDE-Linux-x86_64.AppImage
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: release-assets/
+          if-no-files-found: error
+          retention-days: 30
+
+  publish-release:
+    name: Attach builds to GitHub Release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && inputs.release_tag != '')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: forgeide-*
+          path: release-assets
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.release_tag || github.ref_name }}
+          target_commitish: main
+          name: Forge IDE ${{ inputs.release_tag || github.ref_name }}
+          generate_release_notes: true
+          files: release-assets/**/*
