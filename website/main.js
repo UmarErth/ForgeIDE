@@ -59,7 +59,8 @@ const macAssets = {
 
 async function connectDownloads() {
   const primary = document.getElementById('download-primary');
-  const detected = detectPlatform();\n  const macArchitecture = detected === 'macos' ? await detectMacArchitecture() : null;
+  const detected = detectPlatform();
+  const macArchitecture = detected === 'macos' ? await detectMacArchitecture() : null;
   if (primary && detected) {
     primary.href = latestUrl;
     primary.setAttribute('aria-label', `Download Forge IDE for ${platforms[detected].label}`);
@@ -84,7 +85,8 @@ async function connectDownloads() {
       if (button && asset) button.href = asset.browser_download_url;
     }
 
-    const recommendedPatterns = detected === 'macos' ? (macArchitecture ? macAssets[macArchitecture] : []) : detected ? platforms[detected].patterns : [];\n    const recommendedAsset = recommendedPatterns.length ? findAsset(release, recommendedPatterns) : null;
+    const recommendedPatterns = detected === 'macos' ? (macArchitecture ? macAssets[macArchitecture] : []) : detected ? platforms[detected].patterns : [];
+    const recommendedAsset = recommendedPatterns.length ? findAsset(release, recommendedPatterns) : null;
     if (primary) {
       if (recommendedAsset) {
         primary.href = recommendedAsset.browser_download_url;
