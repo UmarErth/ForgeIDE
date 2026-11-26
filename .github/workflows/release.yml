@@ -21,10 +21,16 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-15-intel
-            platform: macOS
+          - os: macos-15
+            platform: macOS Apple Silicon
+            arch: arm64
             bundles: app,dmg
-            artifact: forgeide-macos
+            artifact: forgeide-macos-arm64
+          - os: macos-15-intel
+            platform: macOS Intel
+            arch: x86_64
+            bundles: app,dmg
+            artifact: forgeide-macos-x86_64
           - os: windows-latest
             platform: Windows
             bundles: nsis,msi
@@ -62,9 +68,9 @@ jobs:
         shell: bash
         run: |
           mkdir -p release-assets/macos
-          cp target/release/bundle/dmg/*.dmg release-assets/macos/ForgeIDE-macOS.dmg
+          cp target/release/bundle/dmg/*.dmg "release-assets/macos/ForgeIDE-macOS-${{ matrix.arch }}.dmg"
           app=$(find target/release/bundle/macos -maxdepth 1 -name '*.app' -print -quit)
-          ditto -c -k --sequesterRsrc --keepParent "$app" release-assets/macos/ForgeIDE-macOS.app.zip
+          ditto -c -k --sequesterRsrc --keepParent "$app" "release-assets/macos/ForgeIDE-macOS-${{ matrix.arch }}.app.zip"
       - name: Stage Windows downloads
         if: runner.os == 'Windows'
         shell: pwsh
