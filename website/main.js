@@ -48,7 +48,7 @@ async function detectMacArchitecture() {
   }
   const agent = (navigator.userAgent || '').toLowerCase();
   if (agent.includes('arm64') || agent.includes('aarch64')) return 'arm64';
-  if (agent.includes('x86_64') || agent.includes('intel')) return 'x86_64';
+  if (agent.includes('x86_64')) return 'x86_64';
   return null;
 }
 
