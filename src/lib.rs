@@ -76,19 +76,44 @@ fn git_status(root: String) -> Result<String, String> {
 #[tauri::command]
 async fn ask_gemini(prompt: String, context: String) -> Result<String, String> {
     let key = key_entry()?.get_password().map_err(|_| "Add your Gemini API key in Settings to use AI.".to_string())?;
-    let content = format!("You are Forge, a careful coding assistant inside a developer's code editor. Be concise, explain assumptions, and return code in Markdown fences when useful.\n\nEditor context:\n{context}\n\nUser request:\n{prompt}");
-    let body = serde_json::json!({"contents":[{"parts":[{"text":content}]}],"generationConfig":{"temperature":0.35,"maxOutputTokens":4096}});
-    let url = format!("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={key}");
-    let response = reqwest::Client::new().post(url).json(&body).send().await.map_err(|e| format!("Could not reach Gemini: {e}"))?;
+    let content = format!("Editor context:\n{context}\n\nUser request:\n{prompt}");
+    let body = serde_json::json!({
+        "model": "gemini-3.8-flash",
+        "system_instruction": "You are Forge, a careful coding assistant inside a developer's code editor. Be concise, explain assumptions, and return code in Markdown fences when useful.",
+        "input": content,
+        "generation_config": { "temperature": 0.35, "max_output_tokens": 4096 }
+    });
+    let response = reqwest::Client::new()
+        .post("https://generativelanguage.googleapis.com/v1beta/interactions")
+        .header("x-goog-api-key", key)
+        .header("Api-Revision", "2026-05-20")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("Could not reach Gemini: {e}"))?;
     let status = response.status();
     let data: serde_json::Value = response.json().await.map_err(|e| format!("Could not read Gemini response: {e}"))?;
     if !status.is_success() {
-        let message = data.pointer("error.message").and_then(|v| v.as_str()).unwrap_or("Gemini request failed");
-        return Err(format!("Gemini ({status}): {message}"));
+        let message = data.pointer("/error/message").and_then(|v| v.as_str()).unwrap_or("Gemini request failed");
+        let code = data.pointer("/error/status").and_then(|v| v.as_str()).unwrap_or("");
+        return Err(if code.is_empty() { format!("Gemini ({status}): {message}") } else { format!("Gemini ({status}, {code}): {message}") });
     }
-    data.pointer("candidates.0.content.parts").and_then(|v| v.as_array())
-        .map(|parts| parts.iter().filter_map(|p| p.get("text").and_then(|t| t.as_str())).collect::<Vec<_>>().join("\n"))
-        .filter(|s| !s.is_empty()).ok_or_else(|| "Gemini returned no text. Try again.".into())
+    if let Some(text) = data.get("output_text").and_then(|v| v.as_str()).filter(|s| !s.trim().is_empty()) {
+        return Ok(text.to_string());
+    }
+    let text = data.pointer("/output").and_then(|v| v.as_array())
+        .map(|items| items.iter().filter_map(|item| {
+            if item.get("type").and_then(|v| v.as_str()) == Some("text") {
+                item.get("text").and_then(|v| v.as_str())
+            } else {
+                None
+            }
+        }).collect::<Vec<_>>().join("\n"))
+        .filter(|s| !s.trim().is_empty());
+    text.ok_or_else(|| {
+        let detail = data.pointer("/error/message").and_then(|v| v.as_str());
+        detail.map(|m| format!("Gemini returned no text: {m}")).unwrap_or_else(|| "Gemini returned no text. Try again.".into())
+    })
 }
 
 #[derive(Serialize, Deserialize)]
