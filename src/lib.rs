@@ -87,55 +87,102 @@ async fn ask_gemini(prompt: String, context: String, model: String) -> Result<St
         "input": content,
         "generation_config": { "temperature": 0.35, "max_output_tokens": 4096 }
     });
-    let response = reqwest::Client::new()
+    let client = reqwest::Client::new();
+    let response = client
         .post("https://generativelanguage.googleapis.com/v1beta/interactions")
-        .header("x-goog-api-key", key)
+        .header("x-goog-api-key", &key)
         .header("Api-Revision", "2026-05-20")
         .json(&body)
         .send()
         .await
         .map_err(|e| format!("Could not reach Gemini: {e}"))?;
     let status = response.status();
-    let data: serde_json::Value = response.json().await.map_err(|e| format!("Could not read Gemini response: {e}"))?;
+    let mut data: serde_json::Value = response.json().await.map_err(|e| format!("Could not read Gemini response: {e}"))?;
     if !status.is_success() {
         let message = data.pointer("/error/message").and_then(|v| v.as_str()).unwrap_or("Gemini request failed");
         let code = data.pointer("/error/status").and_then(|v| v.as_str()).unwrap_or("");
         return Err(if code.is_empty() { format!("Gemini ({status}): {message}") } else { format!("Gemini ({status}, {code}): {message}") });
     }
+
+    // Some API revisions wrap the Interaction resource, while others return it directly.
+    if let Some(interaction) = data.get("interaction") {
+        data = interaction.clone();
+    }
+
+    // Background interactions return an ID before their model output is ready. Fetch the
+    // completed resource instead of reporting a misleading “no text” error.
+    if data.get("status").and_then(|v| v.as_str()) == Some("in_progress") {
+        if let Some(id) = data.get("id").and_then(|v| v.as_str()) {
+            for _ in 0..60 {
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                let poll = client
+                    .get(format!("https://generativelanguage.googleapis.com/v1beta/interactions/{id}"))
+                    .header("x-goog-api-key", &key)
+                    .header("Api-Revision", "2026-05-20")
+                    .send().await
+                    .map_err(|e| format!("Could not check Gemini response: {e}"))?;
+                let poll_status = poll.status();
+                let polled: serde_json::Value = poll.json().await.map_err(|e| format!("Could not read Gemini response: {e}"))?;
+                if !poll_status.is_success() {
+                    let message = polled.pointer("/error/message").and_then(|v| v.as_str()).unwrap_or("Could not retrieve Gemini response");
+                    return Err(format!("Gemini ({poll_status}): {message}"));
+                }
+                data = polled.get("interaction").cloned().unwrap_or(polled);
+                match data.get("status").and_then(|v| v.as_str()) {
+                    Some("completed") => break,
+                    Some("failed" | "cancelled" | "requires_action") => break,
+                    _ => {}
+                }
+            }
+        }
+    }
+
     if let Some(text) = data.get("output_text").and_then(|v| v.as_str()).filter(|s| !s.trim().is_empty()) {
         return Ok(text.to_string());
     }
-    let mut text_parts = Vec::new();
-    if let Some(steps) = data.get("steps").and_then(|v| v.as_array()) {
-        for step in steps {
-            if step.get("type").and_then(|v| v.as_str()) != Some("model_output") { continue; }
-            if let Some(content) = step.get("content").and_then(|v| v.as_array()) {
-                for block in content {
-                    if block.get("type").and_then(|v| v.as_str()) == Some("text") {
-                        if let Some(text) = block.get("text").and_then(|v| v.as_str()).filter(|s| !s.trim().is_empty()) {
-                            text_parts.push(text);
+
+    fn collect_model_text(value: &serde_json::Value, in_model_output: bool, parts: &mut Vec<String>) {
+        match value {
+            serde_json::Value::Array(items) => {
+                for item in items { collect_model_text(item, in_model_output, parts); }
+            }
+            serde_json::Value::Object(map) => {
+                let kind = map.get("type").and_then(|v| v.as_str()).unwrap_or("");
+                let is_model_output = in_model_output || kind == "model_output";
+                if kind == "text" && is_model_output {
+                    if let Some(text) = map.get("text").and_then(|v| v.as_str()).filter(|s| !s.trim().is_empty()) {
+                        parts.push(text.to_string());
+                    }
+                    return;
+                }
+                for (key, child) in map {
+                    if key == "text" && is_model_output {
+                        if let Some(text) = child.as_str().filter(|s| !s.trim().is_empty()) {
+                            parts.push(text.to_string());
                         }
+                    } else if key != "text" {
+                        collect_model_text(child, is_model_output, parts);
                     }
                 }
             }
+            _ => {}
         }
     }
-    // Retain compatibility with older Interactions responses.
-    if text_parts.is_empty() {
-        if let Some(output) = data.get("output").and_then(|v| v.as_array()) {
-            for block in output {
-                if block.get("type").and_then(|v| v.as_str()) == Some("text") {
-                    if let Some(text) = block.get("text").and_then(|v| v.as_str()).filter(|s| !s.trim().is_empty()) {
-                        text_parts.push(text);
-                    }
-                }
-            }
-        }
-    }
+
+    let mut text_parts = Vec::new();
+    collect_model_text(&data, false, &mut text_parts);
     if !text_parts.is_empty() {
         return Ok(text_parts.join("\n"));
     }
+
     let response_status = data.get("status").and_then(|v| v.as_str()).unwrap_or("unknown");
+    let failure = data.get("error").and_then(|e| e.get("message")).and_then(|v| v.as_str());
+    if let Some(message) = failure {
+        return Err(format!("Gemini response status {response_status}: {message}"));
+    }
+    if response_status == "in_progress" {
+        return Err("Gemini is still generating a response after 60 seconds. Try again.".into());
+    }
     let step_types = data.get("steps").and_then(|v| v.as_array())
         .map(|steps| steps.iter().filter_map(|step| step.get("type").and_then(|v| v.as_str())).collect::<Vec<_>>().join(", "))
         .filter(|s| !s.is_empty()).unwrap_or_else(|| "none".into());
