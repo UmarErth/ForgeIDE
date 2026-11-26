@@ -83,6 +83,7 @@ fn chat_dir(app: &tauri::AppHandle, prefs: &ForgePreferences) -> Result<std::pat
 fn get_forge_locations(app: tauri::AppHandle) -> Result<ForgeLocations, String> {
     let prefs = read_preferences(&app)?;
     let default_project = app.path().document_dir().map_err(|e| format!("Could not locate Documents folder: {e}"))?.join("Forge IDE Projects");
+    std::fs::create_dir_all(&default_project).map_err(|e| format!("Could not create default project folder: {e}"))?;
     let default_chat = default_chat_dir(&app)?;
     Ok(ForgeLocations {
         project_directory: prefs.project_directory.unwrap_or_else(|| default_project.to_string_lossy().to_string()),
