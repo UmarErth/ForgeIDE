@@ -29,7 +29,7 @@ Get current installers and portable builds from [GitHub Releases](https://github
 | macOS Intel (x86_64) | `.dmg` installer and zipped `.app` |
 | Linux x86_64 | `.AppImage` |
 
-Release builds run on native Windows, macOS, and Ubuntu runners. Push a version tag such as `v0.2.0`, or run **Build and publish releases** from GitHub Actions with a release tag, to build all platforms and attach their downloads to a GitHub Release.
+Release builds run on native Windows, macOS, and Linux runners. Push a version tag such as `v0.2.0`, or run **Build and publish releases** from GitHub Actions with a release tag, to build all platforms and attach their downloads to a GitHub Release.
 
 ## What Forge can do
 
